@@ -206,9 +206,6 @@ def generate_config(proxy_url, force_ipv6=True):
 
 
 def _apply_ipv6_only(config: dict):
-    # route level strategy
-    config.setdefault("route", {})["domain_strategy"] = "ipv6_only"
-
     # outbound dial strategy
     for ob in config.get("outbounds", []):
         if ob.get("tag") == "proxy":

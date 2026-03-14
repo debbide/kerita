@@ -1,0 +1,62 @@
+name: Kerit-Renew
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 1 */6 * *'
+jobs:
+  run_kerit_login:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 下载公库代码
+        uses: actions/checkout@v4
+      - name: 🐍 设置 Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      - name: 🛡️ 启动 sing-box 代理转发
+        env:
+          PROXY_STR: ${{ secrets.GOST_PROXY }}
+        run: |
+          wget -q https://github.com/SagerNet/sing-box/releases/download/v1.8.10/sing-box-1.8.10-linux-amd64.tar.gz
+          tar -xzf sing-box-1.8.10-linux-amd64.tar.gz
+          chmod +x sing-box-1.8.10-linux-amd64/sing-box
+
+          python generate_singbox_config.py
+
+          if ! ./sing-box-1.8.10-linux-amd64/sing-box check -c config.json; then
+            echo "❌ Invalid sing-box config generated!"
+            exit 1
+          fi
+
+          echo "启动 sing-box 隧道..."
+          nohup ./sing-box-1.8.10-linux-amd64/sing-box run -c config.json > singbox.log 2>&1 &
+          sleep 8
+          echo "测试本地代理连通性..."
+          curl -v --connect-timeout 10 -x socks5://127.0.0.1:1080 https://api.ipify.org 2>&1 || echo "curl exit code: $?"
+      - name: 🛠️ 安装系统依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            google-chrome-stable \
+            xvfb \
+            x11-utils \
+            xdotool \
+            scrot
+      - name: 🐍 安装 Python 依赖
+        run: |
+          pip install seleniumbase
+          seleniumbase install uc_driver
+      - name: 🚀 运行脚本
+        env:
+          PYTHONIOENCODING: utf-8
+          KERIT_ACCOUNT: ${{ secrets.KERIT_ACCOUNT }}
+          KERIT_PROXY: socks5://127.0.0.1:1080
+          TG_BOT: ${{ secrets.TG_BOT }}
+        run: |
+          xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" python kerit_renew.py
+      - name: 📸 上传截图
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-screenshots
+          path: "*.png"

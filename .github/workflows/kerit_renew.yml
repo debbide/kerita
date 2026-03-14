@@ -1,8 +1,7 @@
 name: Kerit-Renew
 on:
-  workflow_dispatch:
-  schedule:
-    - cron: '0 1 */6 * *'
+  repository_dispatch:
+    types: [kerit]
 jobs:
   run_kerit_login:
     runs-on: ubuntu-latest
@@ -28,7 +27,13 @@ jobs:
           tar -xzf "${SINGBOX_ARCHIVE}"
           chmod +x "${SINGBOX_BIN}"
 
-          python generate_singbox_config_ipv6.py
+          if [ -f generate_singbox_config_ipv6.py ]; then
+            echo "使用 generate_singbox_config_ipv6.py 生成配置"
+            python generate_singbox_config_ipv6.py
+          else
+            echo "⚠️ 未找到 generate_singbox_config_ipv6.py，回退到 generate_singbox_config.py"
+            python generate_singbox_config.py
+          fi
 
           if ! "${SINGBOX_BIN}" check -c config.json; then
             echo "❌ Invalid sing-box config generated!"

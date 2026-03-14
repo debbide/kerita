@@ -16,20 +16,27 @@ jobs:
       - name: 🛡️ 启动 sing-box 代理转发
         env:
           PROXY_STR: ${{ secrets.GOST_PROXY }}
+          FORCE_IPV6: "1"
         run: |
-          wget -q https://github.com/SagerNet/sing-box/releases/download/v1.8.10/sing-box-1.8.10-linux-amd64.tar.gz
-          tar -xzf sing-box-1.8.10-linux-amd64.tar.gz
-          chmod +x sing-box-1.8.10-linux-amd64/sing-box
+          # 固定 sing-box 版本，避免参数变化导致配置失效
+          SINGBOX_VERSION="1.8.10"
+          SINGBOX_ARCHIVE="sing-box-${SINGBOX_VERSION}-linux-amd64.tar.gz"
+          SINGBOX_DIR="sing-box-${SINGBOX_VERSION}-linux-amd64"
+          SINGBOX_BIN="./${SINGBOX_DIR}/sing-box"
 
-          python generate_singbox_config.py
+          wget -q "https://github.com/SagerNet/sing-box/releases/download/v${SINGBOX_VERSION}/${SINGBOX_ARCHIVE}"
+          tar -xzf "${SINGBOX_ARCHIVE}"
+          chmod +x "${SINGBOX_BIN}"
 
-          if ! ./sing-box-1.8.10-linux-amd64/sing-box check -c config.json; then
+          python generate_singbox_config_ipv6.py
+
+          if ! "${SINGBOX_BIN}" check -c config.json; then
             echo "❌ Invalid sing-box config generated!"
             exit 1
           fi
 
           echo "启动 sing-box 隧道..."
-          nohup ./sing-box-1.8.10-linux-amd64/sing-box run -c config.json > singbox.log 2>&1 &
+          nohup "${SINGBOX_BIN}" run -c config.json > singbox.log 2>&1 &
           sleep 8
           echo "测试本地代理连通性..."
           curl -v --connect-timeout 10 -x socks5://127.0.0.1:1080 https://api.ipify.org 2>&1 || echo "curl exit code: $?"

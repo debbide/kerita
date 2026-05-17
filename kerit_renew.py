@@ -405,6 +405,81 @@ def extract_remaining_days(sb) -> int:
         return 0
 
 
+def get_server_id(sb):
+    """Read Kerit server id from several possible page locations."""
+    try:
+        value = sb.execute_script(r"""
+            (function(){
+                function clean(v) {
+                    if (v === undefined || v === null) return '';
+                    return String(v).trim();
+                }
+                function pick(text) {
+                    text = clean(text);
+                    if (!text) return '';
+                    var patterns = [
+                        /serverData\s*=\s*[^;]*?["']?id["']?\s*:\s*["']?([A-Za-z0-9_-]+)/i,
+                        /["']server_id["']\s*:\s*["']?([A-Za-z0-9_-]+)/i,
+                        /["']serverId["']\s*:\s*["']?([A-Za-z0-9_-]+)/i,
+                        /["']id["']\s*:\s*["']?([A-Za-z0-9_-]+)/i,
+                        /server[_-]?id[=:]\s*["']?([A-Za-z0-9_-]+)/i,
+                        /\bid[=:]\s*["']?([A-Za-z0-9_-]{3,})/i
+                    ];
+                    for (var i = 0; i < patterns.length; i++) {
+                        var m = text.match(patterns[i]);
+                        if (m && m[1]) return clean(m[1]);
+                    }
+                    return '';
+                }
+
+                if (typeof serverData !== 'undefined' && serverData) {
+                    var direct = clean(serverData.id || serverData.server_id || serverData.serverId);
+                    if (direct) return direct;
+                }
+
+                var selectors = [
+                    '[data-server-id]',
+                    '[data-id]',
+                    'input[name="server_id"]',
+                    'input[name="serverId"]',
+                    'input[name="id"]',
+                    '#server-id',
+                    '#serverId'
+                ];
+                for (var s = 0; s < selectors.length; s++) {
+                    var el = document.querySelector(selectors[s]);
+                    if (!el) continue;
+                    var val = clean(el.value || el.getAttribute('data-server-id') || el.getAttribute('data-id') || el.textContent);
+                    if (val) return val;
+                }
+
+                var buttons = Array.from(document.querySelectorAll('a,button,[onclick],[data-action]'));
+                for (var b = 0; b < buttons.length; b++) {
+                    var raw = [
+                        buttons[b].getAttribute('onclick'),
+                        buttons[b].getAttribute('href'),
+                        buttons[b].getAttribute('data-action'),
+                        buttons[b].getAttribute('data-server-id'),
+                        buttons[b].getAttribute('data-id'),
+                        buttons[b].textContent
+                    ].join(' ');
+                    var got = pick(raw);
+                    if (got) return got;
+                }
+
+                var scripts = Array.from(document.scripts).map(function(x){ return x.textContent || ''; }).join('\n');
+                var fromScript = pick(scripts);
+                if (fromScript) return fromScript;
+
+                return pick(location.href);
+            })()
+        """)
+        value = str(value or "").strip()
+        return value if value else None
+    except Exception:
+        return None
+
+
 # ============================================================
 # 续期流程
 # ============================================================
@@ -416,9 +491,12 @@ def do_renew(sb):
     time.sleep(4)
     sb.save_screenshot("free_panel.png")
 
-    server_id = sb.execute_script(
-        "(function(){ return typeof serverData !== 'undefined' ? serverData.id : null; })()"
-    )
+    server_id = None
+    for _ in range(15):
+        server_id = get_server_id(sb)
+        if server_id:
+            break
+        time.sleep(1)
     if not server_id:
         print("❌ serverData.id缺失")
         sb.save_screenshot("no_server_id.png")
